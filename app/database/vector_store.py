@@ -15,7 +15,7 @@ collection = chroma_client.get_or_create_collection(
 
 # 4. Function to ingest proprietary documents
 def add_document(doc_id: str, content: str, metadata: dict):
-    collection.add(
+    collection.upsert(
         ids=[doc_id],
         documents=[content],
         metadatas=[metadata]

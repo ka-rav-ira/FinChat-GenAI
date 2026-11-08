@@ -1,12 +1,12 @@
 from fastapi import APIRouter,Path,HTTPException
-from app.models.schemas import ChatRequest 
+from app.models.schemas import ChatRequest, DocumentIngestRequest
 import ollama
 import google.generativeai as genai
 import os 
 from dotenv import load_dotenv
 #import asyncio native python library for handling the time delays
 import asyncio
-from app.database.vector_store import search_documents
+from app.database.vector_store import search_documents, add_document
 
 
 load_dotenv()
@@ -18,6 +18,7 @@ router = APIRouter()
 #The Endpoint: Using the Guardrail (request:chatRequest)
 @router.post("/chat/{session_id}")
 async def process_chat(
+
   request:ChatRequest,
   session_id:str = Path(...,title="The id of the chat session"),
   model: str = "llama3"
@@ -93,4 +94,33 @@ async def process_chat(
         "user": request.user_id,
         "bot_reply":bot_response,
         "source_context":retrieved_context
+    }
+
+
+@router.post("/ingest")
+async def ingest_document(request: DocumentIngestRequest):
+    # 1. RBAC Security Gate: Only Admins (user_id == 0) can upload policies
+    if request.user_id != 0:
+        raise HTTPException(
+            status_code=403,
+            detail="Forbidden: Only administrators (user_id 0) can ingest new policies."
+        )
+
+    # 2. Pack category and bank into a metadata dictionary for ChromaDB
+    policy_metadata = {
+        "category": request.category,
+        "bank": request.bank
+    }
+
+    # 3. Call your vector_store function to embed and save the policy
+    add_document(
+        doc_id=request.doc_id,
+        content=request.content,
+        metadata=policy_metadata
+    )
+
+    return {
+        "status": "Success",
+        "message": f"Document '{request.doc_id}' successfully added to ChromaDB.",
+        "metadata": policy_metadata
     }
