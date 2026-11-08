@@ -6,6 +6,7 @@ import os
 from dotenv import load_dotenv
 #import asyncio native python library for handling the time delays
 import asyncio
+from app.database.vector_store import search_documents
 
 
 load_dotenv()
@@ -22,6 +23,26 @@ async def process_chat(
   model: str = "llama3"
 ): 
 
+
+    #Search ChromaDB using the user's question
+    search_results = search_documents(query=request.query,top_results=1)
+
+
+    #Unpack the text from the double brackets
+    if search_results["documents"] and search_results["documents"][0]:
+        retrieved_context = search_results["documents"][0][0]
+    else:
+        retrieved_context="No internal policy found."
+
+    rag_prompt = f"""You are Finchat, a strict Financial Operations Assistant.
+    Answer the user's question using ONLY the internal policy below.
+    If the answer is not in the policy, say: "I cannot verify this from internal settlement documentation."
+    
+    INTERNAL POLICY:
+    {retrieved_context}
+
+    USER QUESTION:
+    {request.query}"""
     
     #######################
     #BUSINESS LOGIC LAYER#
@@ -42,7 +63,7 @@ async def process_chat(
             # Engine 1 :- Local System Hardware(Zero Data leak)
             ai_response = await ollama.AsyncClient().chat(
                 model=model, # ✅ Added the missing comma here
-                messages=[{'role':'user','content':request.query}]
+                messages=[{'role':'user','content':rag_prompt}]
             )
             # ✅ Indented this 4 spaces to the right so it stays inside the 'if' block
             bot_response = ai_response['message']['content']
@@ -53,9 +74,9 @@ async def process_chat(
                 raise ValueError("Missing Gemini API Key in .env file")
 
             genai.configure(api_key=api_key)
-            cloud_model = genai.GenerativeModel('gemini-1.5-flash')
+            cloud_model = genai.GenerativeModel('gemini-3.8-flash')
 
-            response = cloud_model.generate_content(request.query)
+            response = cloud_model.generate_content(rag_prompt)
             bot_response = response.text
 
         else:
@@ -70,5 +91,6 @@ async def process_chat(
         "session": session_id,
         "ai_model_used":model,
         "user": request.user_id,
-        "bot_reply":bot_response
+        "bot_reply":bot_response,
+        "source_context":retrieved_context
     }
