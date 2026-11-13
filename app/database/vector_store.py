@@ -1,5 +1,6 @@
 import chromadb
 from chromadb.utils import embedding_functions
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 # 1. Initialize the ChromaDB client to save data locally
 chroma_client = chromadb.PersistentClient(path="./chroma_data")
@@ -21,6 +22,30 @@ def add_document(doc_id: str, content: str, metadata: dict):
         metadatas=[metadata]
     )
     print(f"Success: Added {doc_id} to FinChat Database.")
+
+#Function to split long pdf's into overlapping chunks and batch-upsert into ChromaDB
+def ingest_chunked_document(doc_id:int,full_text:str,metadata:dict) -> int:
+    #Configure LangChain splitter: 500 chars per chunk, with 50 chars overlap so sentences aren't cut off
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=500,
+        chunk_overlap=50,
+        separators=["\n\n","\n","."," ",""]
+    )
+
+    chunks = text_splitter.split_text(full_text)
+
+    #Prepare batch lists for ChromaDB Upsert
+    chunk_ids = [f"{doc_id}_chunk_{i}" for i in range(len(chunks))]
+    chunk_metadatas = [{**metadata,"chunk_index":i} for i in range(len(chunks))]
+
+    collection.upsert(
+        ids=chunk_ids,
+        documents=chunks,
+        metadatas=chunk_metadatas
+    )
+
+    print(f"Success: Upserted {len(chunks)} chunks for {doc_id} into FinChat Database.")
+    return len(chunks)
 
 # 5. Function to retrieve documents based on semantic meaning
 def search_documents(query: str, top_results: int = 1):
